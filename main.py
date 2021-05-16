@@ -1,5 +1,7 @@
 # adapted from: https://github.com/pytorch/examples/tree/master/mnist
+# save and load model: https://pytorch.org/tutorials/beginner/saving_loading_models.html
 
+from numpy import inf
 import torch
 import torchvision.datasets.mnist as dataset
 import torchvision.transforms as transforms
@@ -15,8 +17,11 @@ TRAIN_SHUFFLE = True
 NUM_WORKERS = 4
 PIN_MEMORY = True
 USE_CUDA = True
-VALIDATE_BATCH_SIZE = 32
+VALIDATE_BATCH_SIZE = 64
 VALIDATE_SHUFFLE = True
+
+MODEL_PATH = 'mnist.model'
+LOAD_AND_CHECK = True
 
 LR = 0.06
 EPOCHS = 10
@@ -63,14 +68,29 @@ model = Model().to(device=device)
 optimizer = optim.Adadelta(model.parameters(), lr=LR)
 loss_function = torch.nn.NLLLoss(reduction='sum').to(device=device)
 
+if MODEL_PATH != '' and LOAD_AND_CHECK:
+    model.load_state_dict(torch.load(MODEL_PATH))
+    model.eval()
+
 if __name__ == '__main__':
 
-    for epoch in range(1, EPOCHS + 1):
+    best_validate_loss = inf
+
+    for epoch in range(0, EPOCHS + 1):
     
-        print(f'Epoch {epoch} of {EPOCHS}: ')
+        if LOAD_AND_CHECK and epoch == 0:
+            print(f'Evaluating model: {MODEL_PATH}')
+        elif epoch==0:
+            continue
+
+        if epoch > 0:
+            print(f'Epoch {epoch} of {EPOCHS}: ')
 
         for is_training, dataloader, context in [(True, train_dataloader, contextlib.nullcontext()), (False, validate_dataloader, torch.no_grad())]:
 
+            if LOAD_AND_CHECK and epoch==0 and is_training:
+                continue
+            
             if is_training:
                 print('\tTraining:')
 
@@ -118,6 +138,16 @@ if __name__ == '__main__':
                     print(f'\tBatch: {i+1:>6}/{len(dataloader):<6}\tLoss:{total_loss:.4f}\tAcc: {acc:.2f}%', end='\r')
 
                 print()
+
+                if total_loss < best_validate_loss and not is_training:
+                    if LOAD_AND_CHECK and epoch==0:
+                        best_validate_loss = total_loss
+                        print(f'\tModel has a loss of {total_loss:.4f} before further training.')
+                    else:
+                        print(f'\tNew best loss {total_loss:.4f} (previously {best_validate_loss:.4f}). Saving model...', end='')
+                        torch.save(model.state_dict(), MODEL_PATH)
+                        best_validate_loss = total_loss
+                    print()
 
 
 
