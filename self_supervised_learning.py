@@ -12,6 +12,8 @@ import torch.optim as optim
 import contextlib
 from reproducibility import ensure_reproducibility, seed_worker
 import matplotlib.pyplot as plt
+import time
+
 
 
 
@@ -66,7 +68,7 @@ class Model(nn.Module):
         x = self.fc(x)
         x = x.view(-1,1,28,28)
         output = torch.sigmoid(x)
-        return output, enc
+        return output, enc, self.conv1.weight
 
 model = Model(encoding_size=ENCODING_SIZE).to(device=device)
 optimizer = optim.Adadelta(model.parameters(), lr=LR)
@@ -79,6 +81,7 @@ if MODEL_PATH != '' and LOAD_AND_CHECK:
 if __name__ == '__main__':
 
     best_validate_loss = inf
+    last_monitored_weights = None
 
     for epoch in range(0, EPOCHS + 1):
     
@@ -118,7 +121,26 @@ if __name__ == '__main__':
 
                     if is_training: optimizer.zero_grad()
 
-                    output, encoding = model(X)
+                    output, encoding, monitored_weights = model(X)
+
+                    # plt.imshow(conv1.detach().cpu()[0,0])
+                    # plt.show(block=False)
+                    # plt.pause(1)
+
+
+                    #####
+                    if last_monitored_weights is None:
+                        pass
+                    else:
+                        diff = F.mse_loss(monitored_weights.detach().clone(), last_monitored_weights) #torch.abs(monitored_weights.detach().clone() - last_monitored_weights)
+                        print(diff.sum().item())
+                        time.sleep(0.1)
+                        
+                    
+                    last_monitored_weights = monitored_weights.detach().clone()
+
+
+                    #####
 
 
                     loss = loss_function(output, X)
@@ -132,7 +154,7 @@ if __name__ == '__main__':
 
 
 
-                    print(f'\tBatch: {i+1:>6}/{len(dataloader):<6}\tLoss:{total_loss:.4f}', end='\r')
+                    #print(f'\tBatch: {i+1:>6}/{len(dataloader):<6}\tLoss:{total_loss:.4f}', end='\r')
 
                 print()
 
