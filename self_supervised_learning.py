@@ -14,6 +14,7 @@ from reproducibility import ensure_reproducibility, seed_worker
 import matplotlib.pyplot as plt
 
 
+
 TRAIN_BATCH_SIZE = 32
 TRAIN_SHUFFLE = True
 NUM_WORKERS = 4
@@ -21,6 +22,7 @@ PIN_MEMORY = True
 USE_CUDA = True
 VALIDATE_BATCH_SIZE = 64
 VALIDATE_SHUFFLE = True
+ENCODING_SIZE = 10
 
 MODEL_PATH = 'mnist.model'
 LOAD_AND_CHECK = False
@@ -42,13 +44,14 @@ train_dataloader = DataLoader(train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffl
 validate_dataloader = DataLoader(validate_dataset, batch_size=VALIDATE_BATCH_SIZE, shuffle=VALIDATE_SHUFFLE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY, worker_init_fn=seed_worker)
 
 class Model(nn.Module):
-    def __init__(self):
+    def __init__(self, encoding_size=128):
         super().__init__()
+        self.encoding_size = encoding_size
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
         self.dropout1 = nn.Dropout(0.25)
-        self.encoding = nn.Linear(9216, 128)
-        self.fc = nn.Linear(128, 28 * 28)
+        self.encoding = nn.Linear(9216, encoding_size)
+        self.fc = nn.Linear(encoding_size, 28 * 28)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -62,10 +65,10 @@ class Model(nn.Module):
         x = F.relu(enc)
         x = self.fc(x)
         x = x.view(-1,1,28,28)
-        output = F.sigmoid(x)
+        output = torch.sigmoid(x)
         return output, enc
 
-model = Model().to(device=device)
+model = Model(encoding_size=ENCODING_SIZE).to(device=device)
 optimizer = optim.Adadelta(model.parameters(), lr=LR)
 loss_function = torch.nn.BCELoss(reduction='sum').to(device=device)
 
@@ -118,11 +121,6 @@ if __name__ == '__main__':
                     output, encoding = model(X)
 
 
-                    # plt.imshow(output[0,0].detach().cpu())
-                    # plt.show()
-                    # exit()
-
-
                     loss = loss_function(output, X)
                     
                     if is_training:
@@ -131,20 +129,20 @@ if __name__ == '__main__':
 
                     total_loss += loss.item()
 
-                    # if grounds is None: # and preds is None
-                    #     grounds = y.detach()
-                    #     preds = output.detach().argmax(dim=1)
-                    # else:
-                    #     grounds = torch.cat([grounds, y.detach()])
-                    #     preds = torch.cat([preds, output.detach().argmax(dim=1)])
-
-                    # acc = torch.sum(grounds==preds).item()/len(grounds)*100
 
 
 
                     print(f'\tBatch: {i+1:>6}/{len(dataloader):<6}\tLoss:{total_loss:.4f}', end='\r')
 
                 print()
+
+                if not is_training:
+                    # if evaluating - show last outputs
+                    plt.imshow(torch.cat([X.view(-1,28), output.view(-1,28)], dim=1).detach().cpu())
+                    plt.show(block=False)
+                    plt.pause(0.001)
+                    
+
 
                 if total_loss < best_validate_loss and not is_training:
                     if LOAD_AND_CHECK and epoch==0:
