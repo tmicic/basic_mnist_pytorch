@@ -3,6 +3,7 @@
 
 from numpy import inf
 import torch
+from torch.nn import parameter
 import torchvision.datasets.mnist as dataset
 import torchvision.transforms as transforms
 from torch.utils.data.dataloader import DataLoader
@@ -51,15 +52,16 @@ class Model(nn.Module):
         self.encoding_size = encoding_size
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.encoding = nn.Linear(9216, encoding_size)
+        self.encoding = nn.LazyLinear(encoding_size)
         self.fc = nn.Linear(encoding_size, 28 * 28)
 
     def get_encoding(self, x):
         x = self.conv1(x)
-        x = F.relu(x)
+        x = F.leaky_relu(x)
+        #x = F.max_pool2d(x, 2)
         x = self.conv2(x)
-        x = F.relu(x)
-        x = F.max_pool2d(x, 2)
+        x = F.leaky_relu(x)
+        #x = F.max_pool2d(x, 2)
         x = torch.flatten(x, 1)
         enc = self.encoding(x)
 
@@ -74,11 +76,13 @@ class Model(nn.Module):
         return output, enc, self.conv1.weight
 
 model = Model(encoding_size=ENCODING_SIZE).to(device=device)
-optimizer = optim.Adadelta(model.parameters(), lr=LR)
+#optimizer = optim.Adadelta(model.parameters(), lr=LR)
+optimizer = optim.Adadelta(list(model.conv1.parameters())+list(model.conv2.parameters()), lr=LR)
 loss_function = torch.nn.BCELoss(reduction='sum').to(device=device)
 
-model.fc.requires_grad_(False)
-model.encoding.requires_grad_(False)
+# model.fc.requires_grad_(False)
+# model.encoding.requires_grad_(False)
+
 
 if MODEL_PATH != '' and LOAD_AND_CHECK:
     model.load_state_dict(torch.load(MODEL_PATH))
