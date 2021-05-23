@@ -39,8 +39,8 @@ device = torch.device("cuda" if USE_CUDA else "cpu")
 train_transform = transforms.Compose([transforms.ToTensor()])#,transforms.Normalize((0.1307,), (0.3081,))])
 test_transform = transforms.Compose([transforms.ToTensor()])#, transforms.Normalize((0.1307,), (0.3081,))])
 
-train_dataset = dataset.MNIST(download=True, root='data', train=True, transform=train_transform)
-validate_dataset = dataset.MNIST(download=True, root='data', train=False, transform=test_transform)
+train_dataset = dataset.FashionMNIST(download=True, root='data', train=True, transform=train_transform)
+validate_dataset = dataset.FashionMNIST(download=True, root='data', train=False, transform=test_transform)
 
 train_dataloader = DataLoader(train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=TRAIN_SHUFFLE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY, worker_init_fn=seed_worker)
 validate_dataloader = DataLoader(validate_dataset, batch_size=VALIDATE_BATCH_SIZE, shuffle=VALIDATE_SHUFFLE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY, worker_init_fn=seed_worker)
