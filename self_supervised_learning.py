@@ -13,17 +13,18 @@ import contextlib
 from reproducibility import ensure_reproducibility, seed_worker
 import matplotlib.pyplot as plt
 import time
+import random
 
 
 
 
 TRAIN_BATCH_SIZE = 32
-TRAIN_SHUFFLE = True
+TRAIN_SHUFFLE = False
 NUM_WORKERS = 4
 PIN_MEMORY = True
 USE_CUDA = True
 VALIDATE_BATCH_SIZE = 64
-VALIDATE_SHUFFLE = True
+VALIDATE_SHUFFLE = False
 ENCODING_SIZE = 10
 
 MODEL_PATH = 'mnist.model'
