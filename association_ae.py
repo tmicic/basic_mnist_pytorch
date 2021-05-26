@@ -15,7 +15,7 @@ from reproducibility import ensure_reproducibility, seed_worker
 import matplotlib.pyplot as plt
 import time
 import random
-import tqdm
+import tqdm     # https://www.youtube.com/watch?v=RKHopFfbPao&list=PLhhyoLH6IjfxeoooqP9rhU3HJIAVAJ3Vz&index=50
 
 
 TRAIN_BATCH_SIZE = 32
@@ -72,16 +72,20 @@ class Model(nn.Module):
         x = F.relu(enc)
         x = self.fc(x)
         x = x.view(-1,1,28,28)
-        output = torch.sigmoid(x)
-        return output, enc, self.conv1.weight
+        return x, enc, self.conv1.weight
 
 model = Model(encoding_size=ENCODING_SIZE).to(device=device)
 optimizer = optim.Adadelta(model.parameters(), lr=LR)
 optimizer = optim.Adadelta(list(model.conv1.parameters())+list(model.conv2.parameters()), lr=LR)
-loss_function = torch.nn.BCELoss(reduction='sum').to(device=device)
+loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device=device)
 
 # model.fc.requires_grad_(False)
 # model.encoding.requires_grad_(False)
+
+# MIXED PRECISION TRAINING (using FP16 instead, increase memory and apparently speed)
+# https://www.youtube.com/watch?v=ks3oZ7Va8HU&list=PLhhyoLH6IjfxeoooqP9rhU3HJIAVAJ3Vz&index=49
+#
+scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
 
 if MODEL_PATH != '' and LOAD_AND_CHECK:
@@ -139,21 +143,23 @@ if __name__ == '__main__':
 
                     if is_training: optimizer.zero_grad()
 
-                    output, encoding, _ = model(X)
+                    with torch.cuda.amp.autocast_mode.autocast():
+                        output, encoding, _ = model(X)
 
-                    if is_training:
-                        if training_encodings is None:
-                            training_encodings = encoding.detach()
-                            training_labels = y.detach()
-                        else:
-                            training_encodings = torch.cat([training_encodings, encoding.detach()])
-                            training_labels = torch.cat([training_labels, y.detach()])
+                        if is_training:
+                            if training_encodings is None:
+                                training_encodings = encoding.detach()
+                                training_labels = y.detach()
+                            else:
+                                training_encodings = torch.cat([training_encodings, encoding.detach()])
+                                training_labels = torch.cat([training_labels, y.detach()])
 
-                    loss = loss_function(output, X)
-                    
+                        loss = loss_function(output, X)
+                        
                     if is_training:
-                        loss.backward()
-                        optimizer.step()
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
 
                     total_loss += loss.item()
                     total_processed += len(y)
