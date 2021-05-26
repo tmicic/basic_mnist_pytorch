@@ -15,7 +15,7 @@ from reproducibility import ensure_reproducibility, seed_worker
 import matplotlib.pyplot as plt
 import time
 import random
-
+import tqdm
 
 
 TRAIN_BATCH_SIZE = 32
@@ -76,7 +76,7 @@ class Model(nn.Module):
         return output, enc, self.conv1.weight
 
 model = Model(encoding_size=ENCODING_SIZE).to(device=device)
-#optimizer = optim.Adadelta(model.parameters(), lr=LR)
+optimizer = optim.Adadelta(model.parameters(), lr=LR)
 optimizer = optim.Adadelta(list(model.conv1.parameters())+list(model.conv2.parameters()), lr=LR)
 loss_function = torch.nn.BCELoss(reduction='sum').to(device=device)
 
@@ -132,7 +132,7 @@ if __name__ == '__main__':
                 
                 grounds, preds = None, None
 
-                for i, (X, y) in enumerate(dataloader):
+                for i, (X, y) in tqdm.tqdm(enumerate(dataloader), total=len(dataloader), leave=False):
 
                     X = X.to(device)
                     y = y.to(device)
@@ -177,7 +177,7 @@ if __name__ == '__main__':
 
 
 
-                    print(f'\033[K\tBatch: {i+1:>6}/{len(dataloader):<6}\tLoss:{total_loss:.4f}\tAcc: {total_correct/total_processed*100:.2f}%', end='\r')
+                    #print(f'\033[K\tBatch: {i+1:>6}/{len(dataloader):<6}\tLoss:{total_loss:.4f}\tAcc: {total_correct/total_processed*100:.2f}%', end='\r')
 
                 print()
 
