@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore")
 
 
 
-TRAIN_BATCH_SIZE = 32
+TRAIN_BATCH_SIZE = 128
 TRAIN_SHUFFLE = False
 NUM_WORKERS = 4
 PIN_MEMORY = True
@@ -60,15 +60,13 @@ class Model(nn.Module):
         super().__init__()
         self.encoding_size = encoding_size
         self.conv1 = nn.Conv2d(1, 32, 3, 1, bias=False)
-        self.bn1 = nn.BatchNorm2d(32)
         self.conv2 = nn.Conv2d(32, 64, 3, 1, bias=False)
-        self.bn2 = nn.BatchNorm2d(64)
         self.encoding = nn.Linear(36864, encoding_size)
         self.fc = nn.Linear(encoding_size, 36864)        
-        self.upconv1 = nn.ConvTranspose2d(64,32,3,1)
-        self.upconv2 = nn.ConvTranspose2d(32,1,3,1)
+        self.upconv1 = nn.ConvTranspose2d(64,32,3,1, bias=False)
+        self.upconv2 = nn.ConvTranspose2d(32,1,3,1, bias=False)
 
-        # share weights between conv layers and conv transpose layers. This DRASTICALLY improves the output and coverges MUCH faster
+        # MAYBE NOT! share weights between conv layers and conv transpose layers. This DRASTICALLY improves the output and coverges MUCH faster
         self.upconv1.weight = self.conv2.weight
         self.upconv2.weight = self.conv1.weight 
 
@@ -79,18 +77,19 @@ class Model(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
         #x = self.bn1(x)        # removing batchnorm - doesnt seem to make a diff = must investigate
-        x = F.relu(x)
+
+        x = F.leaky_relu(x)
         x = self.conv2(x)
         #x = self.bn2(x)
-        x = F.relu(x)
+        x = F.leaky_relu(x)
         
         x = torch.flatten(x, 1)
 
 
         enc = self.encoding(x)
-        x = F.relu(enc)
+        x = F.leaky_relu(enc)
         x = self.fc(x)
-        x = F.relu(x)
+        x = F.leaky_relu(x)
 
 
         x = x.view(-1,64,24,24)
@@ -107,7 +106,8 @@ class Model(nn.Module):
 
 model = Model(encoding_size=ENCODING_SIZE).to(device=device)
 
-optimizer = optim.Adadelta(model.parameters(), lr=LR)       # adadelta only seems to work. cant get adam or SGD to work
+optimizer = optim.Adadelta(model.parameters())#, lr=LR)       # adadelta only seems to work. cant get adam or SGD to work
+
 
 
 # model.fc.requires_grad_(False)
@@ -137,9 +137,13 @@ if __name__ == '__main__':
         loss = loss_function(output, batch)
 
         loss.backward()
+
+
+
         optimizer.step()
 
-        print(loss.item())
+        if loss.item() < 1600 :
+            print(y, "    ", loss.item())
         cv2.imshow('Input', cv2.resize(output.detach().squeeze().cpu()[0].numpy(), (256,256)))
 
         c = cv2.waitKey(1)
