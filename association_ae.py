@@ -16,7 +16,9 @@ import matplotlib.pyplot as plt
 import time
 import random
 import tqdm     # https://www.youtube.com/watch?v=RKHopFfbPao&list=PLhhyoLH6IjfxeoooqP9rhU3HJIAVAJ3Vz&index=50
+from utils import ignore_warnings
 
+ignore_warnings()
 
 TRAIN_BATCH_SIZE = 32
 TRAIN_SHUFFLE = False
@@ -26,6 +28,8 @@ USE_CUDA = True
 VALIDATE_BATCH_SIZE = 512
 VALIDATE_SHUFFLE = False
 ENCODING_SIZE = 128
+USE_SCALER = True
+
 
 MODEL_PATH = 'mnist.model'
 LOAD_AND_CHECK = False
@@ -33,15 +37,15 @@ LOAD_AND_CHECK = False
 LR = 0.06
 EPOCHS = 10
 
-ensure_reproducibility(6000)
+ensure_reproducibility(6000, debug_only=False)
 
 device = torch.device("cuda" if USE_CUDA else "cpu")
 
 train_transform = transforms.Compose([transforms.ToTensor()])#,transforms.Normalize((0.1307,), (0.3081,))])
 test_transform = transforms.Compose([transforms.ToTensor()])#, transforms.Normalize((0.1307,), (0.3081,))])
 
-train_dataset = dataset.FashionMNIST(download=True, root='data', train=True, transform=train_transform)
-validate_dataset = dataset.FashionMNIST(download=True, root='data', train=False, transform=test_transform)
+train_dataset = dataset.MNIST(download=True, root='data', train=True, transform=train_transform)
+validate_dataset = dataset.MNIST(download=True, root='data', train=False, transform=test_transform)
 
 train_dataloader = DataLoader(train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=TRAIN_SHUFFLE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY, worker_init_fn=seed_worker)
 validate_dataloader = DataLoader(validate_dataset, batch_size=VALIDATE_BATCH_SIZE, shuffle=VALIDATE_SHUFFLE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY, worker_init_fn=seed_worker)
@@ -51,17 +55,19 @@ class Model(nn.Module):
         super().__init__()
         self.encoding_size = encoding_size
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
+        #self.bn = nn.BatchNorm2d(32)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
         self.encoding = nn.LazyLinear(encoding_size)
         self.fc = nn.Linear(encoding_size, 28 * 28)
 
     def get_encoding(self, x):
         x = self.conv1(x)
+        #x = self.bn(x)
         x = F.leaky_relu(x)
-        #x = F.max_pool2d(x, 2)
+        x = F.max_pool2d(x, 2)
         x = self.conv2(x)
         x = F.leaky_relu(x)
-        #x = F.max_pool2d(x, 2)
+        x = F.max_pool2d(x, 2)
         x = torch.flatten(x, 1)
         enc = self.encoding(x)
 
@@ -79,13 +85,14 @@ optimizer = optim.Adadelta(model.parameters(), lr=LR)
 optimizer = optim.Adadelta(list(model.conv1.parameters())+list(model.conv2.parameters()), lr=LR)
 loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device=device)
 
-# model.fc.requires_grad_(False)
-# model.encoding.requires_grad_(False)
+
 
 # MIXED PRECISION TRAINING (using FP16 instead, increase memory and apparently speed)
 # https://www.youtube.com/watch?v=ks3oZ7Va8HU&list=PLhhyoLH6IjfxeoooqP9rhU3HJIAVAJ3Vz&index=49
 #
-scaler = torch.cuda.amp.grad_scaler.GradScaler()
+
+if USE_SCALER:
+    scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
 
 if MODEL_PATH != '' and LOAD_AND_CHECK:
@@ -143,7 +150,9 @@ if __name__ == '__main__':
 
                     if is_training: optimizer.zero_grad()
 
-                    with torch.cuda.amp.autocast_mode.autocast():
+                    scaler_context = torch.cuda.amp.autocast_mode.autocast() if USE_SCALER else contextlib.nullcontext()
+
+                    with scaler_context:
                         output, encoding, _ = model(X)
 
                         if is_training:
@@ -157,9 +166,14 @@ if __name__ == '__main__':
                         loss = loss_function(output, X)
                         
                     if is_training:
-                        scaler.scale(loss).backward()
-                        scaler.step(optimizer)
-                        scaler.update()
+
+                        if USE_SCALER:
+                            scaler.scale(loss).backward()
+                            scaler.step(optimizer)
+                            scaler.update()
+                        else:
+                            loss.backward()
+                            optimizer.step()
 
                     total_loss += loss.item()
                     total_processed += len(y)
@@ -188,7 +202,7 @@ if __name__ == '__main__':
                 print()
 
                 if not is_training:
-                    plt.imshow(torch.cat([X.view(-1,28), output.view(-1,28)], dim=1).detach().cpu())
+                    plt.imshow(torch.cat([X[0:6].view(-1,28), output[0:6].view(-1,28)], dim=1).detach().cpu())
                     plt.show(block=False)
                     plt.pause(0.001)
 

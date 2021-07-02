@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore")
 
 
 
-TRAIN_BATCH_SIZE = 128
+TRAIN_BATCH_SIZE = 32
 TRAIN_SHUFFLE = False
 NUM_WORKERS = 4
 PIN_MEMORY = True
@@ -59,12 +59,21 @@ class Model(nn.Module):
     def __init__(self, encoding_size=128):
         super().__init__()
         self.encoding_size = encoding_size
-        self.conv1 = nn.Conv2d(1, 32, 3, 1, bias=False)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1, bias=False)
-        self.encoding = nn.Linear(36864, encoding_size)
-        self.fc = nn.Linear(encoding_size, 36864)        
-        self.upconv1 = nn.ConvTranspose2d(64,32,3,1, bias=False)
-        self.upconv2 = nn.ConvTranspose2d(32,1,3,1, bias=False)
+        self.conv1 = nn.Conv2d(1, 32, 3, 1, padding=1, bias=False)
+        self.maxpool1 = nn.MaxPool2d(2,2, return_indices=True)
+        self.conv2 = nn.Conv2d(32, 64, 3, 1, padding=1, bias=False)
+        self.maxpool2 = nn.MaxPool2d(2,2, return_indices=True)
+        self.encoding = nn.Linear(3136, encoding_size)
+        self.fc = nn.Linear(encoding_size, 3136)     
+        self.maxunpool1 = nn.MaxUnpool2d(2,2)
+
+
+
+        self.upconv1 = nn.ConvTranspose2d(64,32,3,1, padding=1, bias=False)
+
+        self.maxunpool2 = nn.MaxUnpool2d(2,2)
+
+        self.upconv2 = nn.ConvTranspose2d(32,1,3,1, padding=1, bias=False)
 
         # MAYBE NOT! share weights between conv layers and conv transpose layers. This DRASTICALLY improves the output and coverges MUCH faster
         self.upconv1.weight = self.conv2.weight
@@ -73,31 +82,55 @@ class Model(nn.Module):
 
 
 
-
     def forward(self, x):
         x = self.conv1(x)
-        #x = self.bn1(x)        # removing batchnorm - doesnt seem to make a diff = must investigate
-
+      
         x = F.leaky_relu(x)
+        x, ind1 = self.maxpool1(x)
+
         x = self.conv2(x)
+        
+
+
         #x = self.bn2(x)
         x = F.leaky_relu(x)
-        
-        x = torch.flatten(x, 1)
+        x, ind2 = self.maxpool2(x)
 
+
+        
+
+        x = torch.flatten(x, 1)
+        
 
         enc = self.encoding(x)
+        
+        
+
         x = F.leaky_relu(enc)
         x = self.fc(x)
+        
         x = F.leaky_relu(x)
 
 
-        x = x.view(-1,64,24,24)
+        x = x.view(-1,64,7,7)
+    
+        x = self.maxunpool1(x, ind2)
+        #x = F.upsample_bilinear(x, scale_factor=2)
+
         x = self.upconv1(x)
 
 
+        x = self.maxunpool2(x, ind1)      
+        #x = F.upsample_bilinear(x, scale_factor=2)
+
         x = F.relu(x)
+
+
+
+
         x = self.upconv2(x)   
+  
+                
         output = torch.sigmoid(x)
 
 
@@ -125,6 +158,11 @@ if __name__ == '__main__':
     batch, _ = next(iter(train_dataloader))
 
 
+
+
+
+
+
     batch = batch.to(device=device)
 
     model.train()
@@ -136,9 +174,9 @@ if __name__ == '__main__':
 
         loss = loss_function(output, batch)
 
+        
+
         loss.backward()
-
-
 
         optimizer.step()
 
